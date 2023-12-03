@@ -3,11 +3,14 @@ import asyncio
 import distutils.util
 import logging
 import os
-import discord
 from logging.handlers import TimedRotatingFileHandler
-from os import environ
+from os import getenv
 from pathlib import Path
 
+from dotenv import load_dotenv
+load_dotenv()
+
+import discord
 import seaborn as sns
 from discord.ext import commands
 from matplotlib import pyplot as plt
@@ -17,7 +20,7 @@ from tle.util import codeforces_common as cf_common
 from tle.util import discord_common, font_downloader
 
 
-def setup():
+async def setup():
     # Make required directories.
     for path in constants.ALL_DIRS:
         os.makedirs(path, exist_ok=True)
@@ -40,33 +43,41 @@ def setup():
     sns.set_style('darkgrid', options)
 
     # Download fonts if necessary
-    font_downloader.maybe_download()
+    await font_downloader.maybe_download()
 
+
+class Bot(commands.Bot):
+
+    def __init__(self, *args, **kwargs):
+        intents = discord.Intents.default()
+        intents.members = True
+        intents.message_content = True
+        super().__init__(command_prefix=commands.when_mentioned_or(';'), intents=intents)
+
+    async def setup_hook(self) -> None:
+        await setup()
+        cogs = [file.stem for file in Path('tle', 'cogs').glob('*.py')]
+        for extension in cogs:
+            await self.load_extension(f'tle.cogs.{extension}')
+        logging.info(f'Cogs loaded: {", ".join(self.cogs)}')
+        
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--nodb', action='store_true')
     args = parser.parse_args()
 
-    token = environ.get('BOT_TOKEN')
+    token = getenv('BOT_TOKEN')
     if not token:
         logging.error('Token required')
         return
 
-    allow_self_register = environ.get('ALLOW_DUEL_SELF_REGISTER')
+    allow_self_register = getenv('ALLOW_DUEL_SELF_REGISTER')
     if allow_self_register:
-        constants.ALLOW_DUEL_SELF_REGISTER = bool(distutils.util.strtobool(allow_self_register))
+        # constants.ALLOW_DUEL_SELF_REGISTER = bool(distutils.util.strtobool(allow_self_register))
+        constants.ALLOW_DUEL_SELF_REGISTER = allow_self_register in ["true", "True", "TRUE"]
 
-    setup()
-    
-    intents = discord.Intents.default()
-    intents.members = True
-
-    bot = commands.Bot(command_prefix=commands.when_mentioned_or(';'), intents=intents)
-    cogs = [file.stem for file in Path('tle', 'cogs').glob('*.py')]
-    for extension in cogs:
-        bot.load_extension(f'tle.cogs.{extension}')
-    logging.info(f'Cogs loaded: {", ".join(bot.cogs)}')
+    bot = Bot()
 
     def no_dm_check(ctx):
         if ctx.guild is None:

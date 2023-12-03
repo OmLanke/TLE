@@ -1,6 +1,8 @@
 import logging
 import os
-import urllib.request
+# import urllib.request
+import aiohttp
+import asyncio
 
 from zipfile import ZipFile
 from io import BytesIO
@@ -21,14 +23,17 @@ def _unzip(font, archive):
         zipfile.extract(font, constants.FONTS_DIR)
 
 
-def _download(font_path):
+async def _download(font_path):
     font = os.path.basename(font_path)
     logger.info(f'Downloading font `{font}`.')
-    with urllib.request.urlopen(f'{URL_BASE}{font}.zip') as resp:
-        _unzip(font, BytesIO(resp.read()))
+    async with aiohttp.ClientSession() as ses:
+        async with ses.get(f'{URL_BASE}{font}.zip') as resp:
+            _unzip(font, BytesIO(await resp.read()))
+            logger.info(f'Finished downloading font `{font}`.')
 
 
-def maybe_download():
-    for font_path in FONTS:
-        if not os.path.isfile(font_path):
-            _download(font_path)
+async def maybe_download():
+    async with asyncio.TaskGroup() as tasks:
+        for font_path in FONTS:
+            if not os.path.isfile(font_path):
+                tasks.create_task(_download(font_path))
